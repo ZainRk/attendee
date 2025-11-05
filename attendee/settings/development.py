@@ -3,8 +3,12 @@ import os
 from .base import *
 
 DEBUG = True
-SITE_DOMAIN = "localhost:8000"
-ALLOWED_HOSTS = ["tendee-stripe-hooks.ngrok.io", "localhost"]
+SITE_DOMAIN = os.getenv("SITE_DOMAIN", "localhost:8000")
+ALLOWED_HOSTS = ["tendee-stripe-hooks.ngrok.io", "localhost", "joey-guiding-tortoise.ngrok-free.app", "attendee-app-local"]
+CSRF_TRUSTED_ORIGINS = [
+    "https://joey-guiding-tortoise.ngrok-free.app",
+    "https://tendee-stripe-hooks.ngrok.io",
+]
 
 DATABASES = {
     "default": {

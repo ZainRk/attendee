@@ -46,9 +46,11 @@ logger = logging.getLogger(__name__)
 def build_site_url(path=""):
     """
     Build a full URL using SITE_DOMAIN setting.
-    Automatically uses http:// for localhost, https:// for everything else.
+    Automatically uses http:// for localhost and internal Docker services, https:// for everything else.
     """
-    protocol = "http" if settings.SITE_DOMAIN.startswith("localhost") else "https"
+    # Use http for localhost and internal Docker service names (e.g., attendee-app-local)
+    is_local = settings.SITE_DOMAIN.startswith("localhost") or settings.SITE_DOMAIN.startswith("attendee-app-local")
+    protocol = "http" if is_local else "https"
     return f"{protocol}://{settings.SITE_DOMAIN}{path}"
 
 
