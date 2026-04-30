@@ -341,21 +341,6 @@ class ZoomOAuthConnectionsApiObjectAccessIntegrationTest(TransactionTestCase):
         self.assertEqual(mock_get_zak_token.call_args[0][0].object_id, self.zoom_oauth_connection_a.object_id)
 
     @patch("bots.zoom_oauth_connections_api_views.get_zak_token_via_zoom_oauth_connection")
-    def test_zoom_oauth_connection_onbehalf_token_path_returns_zak_token_as_alias(self, mock_get_zak_token):
-        """Test the old local test path still returns ZAK while callers migrate to /zak_token."""
-        mock_get_zak_token.return_value = "fake_zak_token"
-        response = self._make_authenticated_request(
-            "POST",
-            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/onbehalf_token",
-            self.api_key_a_plain,
-            json.dumps({}),
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json()["zak_token"], "fake_zak_token")
-        mock_get_zak_token.assert_called_once()
-
-    @patch("bots.zoom_oauth_connections_api_views.get_zak_token_via_zoom_oauth_connection")
     def test_zoom_oauth_connection_zak_token_cross_project_returns_404(self, mock_get_zak_token):
         """Test that API key cannot generate a ZAK token for another project's connection."""
         response = self._make_authenticated_request(
