@@ -231,6 +231,26 @@ def _get_zak_token(access_token: str) -> str | None:
     return response_data.get("token")
 
 
+def _create_zoom_meeting(access_token: str, meeting_data: dict) -> dict:
+    url = "https://api.zoom.us/v2/users/me/meetings"
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+    try:
+        response = requests.post(url, headers=headers, json=meeting_data, timeout=30)
+        response.raise_for_status()
+        response_data = response.json()
+        if not isinstance(response_data, dict):
+            raise ZoomAPIError(f"Unexpected Zoom create meeting response. Response body: {_zoom_response_body_for_log(response)}")
+        return response_data
+    except requests.RequestException as e:
+        _raise_if_error_is_authentication_error(e)
+        response_body = _zoom_response_body_for_log(getattr(e, "response", None))
+        logger.exception(f"Failed to create Zoom meeting. Response body: {response_body}")
+        raise ZoomAPIError(f"Failed to create Zoom meeting. Response body: {response_body}")
+    except ValueError:
+        raise ZoomAPIError(f"Failed to parse Zoom create meeting response. Response body: {_zoom_response_body_for_log(response)}")
+
+
 def _get_zoom_meetings(access_token: str) -> list[dict]:
     base_url = "https://api.zoom.us/v2/users/me/meetings"
     base_params = {
@@ -393,8 +413,9 @@ def get_zak_token_via_zoom_oauth_connection(zoom_oauth_connection: ZoomOAuthConn
     return _get_zak_token(access_token)
 
 
-def get_access_token_via_zoom_oauth_connection(zoom_oauth_connection: ZoomOAuthConnection) -> str | None:
-    return _get_access_token(zoom_oauth_connection)
+def create_zoom_meeting_via_zoom_oauth_connection(zoom_oauth_connection: ZoomOAuthConnection, meeting_data: dict) -> dict:
+    access_token = _get_access_token(zoom_oauth_connection)
+    return _create_zoom_meeting(access_token, meeting_data)
 
 
 def get_zoom_tokens_via_zoom_oauth_app(bot: Bot) -> dict | None:

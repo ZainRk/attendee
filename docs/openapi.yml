@@ -2156,12 +2156,12 @@ paths:
           description: Zoom OAuth Connection deleted successfully
         '404':
           description: Zoom OAuth Connection not found
-  /api/v1/zoom_oauth_connections/{object_id}/access_token:
+  /api/v1/zoom_oauth_connections/{object_id}/meetings:
     post:
-      operationId: Create Zoom OAuth Connection Access Token
-      description: Generates a fresh Zoom OAuth user access token for a connected
-        Zoom OAuth connection in the authenticated project.
-      summary: Create a Zoom OAuth access token
+      operationId: Create Zoom OAuth Connection Meeting
+      description: Creates a Zoom meeting for the connected Zoom OAuth user in the
+        authenticated project. Attendee refreshes and uses the Zoom OAuth token internally.
+      summary: Create a Zoom meeting
       parameters:
       - in: header
         name: Authorization
@@ -2192,14 +2192,14 @@ paths:
       security:
       - {}
       responses:
-        '200':
-          description: Zoom OAuth access token generated successfully
+        '201':
+          description: Zoom meeting created successfully
         '400':
           description: Invalid input or Zoom OAuth connection state
         '404':
           description: Zoom OAuth Connection not found
         '502':
-          description: Zoom token generation failed
+          description: Zoom meeting creation failed
   /api/v1/zoom_oauth_connections/{object_id}/zak_token:
     post:
       operationId: Create Zoom OAuth Connection ZAK Token
