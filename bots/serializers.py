@@ -2360,13 +2360,9 @@ class CreateZoomOAuthConnectionZakTokenSerializer(serializers.Serializer):
         return data
 
 
-class CreateZoomOAuthConnectionAccessTokenSerializer(serializers.Serializer):
+class CreateZoomOAuthConnectionMeetingSerializer(serializers.Serializer):
     def validate(self, data):
-        expected_fields = set(self.fields.keys())
-        provided_fields = set(self.initial_data.keys())
-        unexpected_fields = provided_fields - expected_fields
+        if not isinstance(self.initial_data, dict):
+            raise serializers.ValidationError("Expected a JSON object containing Zoom meeting creation fields")
 
-        if unexpected_fields:
-            raise serializers.ValidationError(f"Unexpected field(s): {', '.join(sorted(unexpected_fields))}. Allowed fields are: {', '.join(sorted(expected_fields))}")
-
-        return data
+        return self.initial_data

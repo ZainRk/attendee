@@ -439,77 +439,101 @@ class ZoomOAuthConnectionsApiObjectAccessIntegrationTest(TransactionTestCase):
         updated_credentials = self.zoom_oauth_connection_a.get_credentials()
         self.assertEqual(updated_credentials["refresh_token"], "rotated_refresh_token")
 
-    @patch("bots.zoom_oauth_connections_api_views.get_access_token_via_zoom_oauth_connection")
-    def test_zoom_oauth_connection_access_token_success(self, mock_get_access_token):
-        """Test that API key can generate an access token for its own connection."""
-        mock_get_access_token.return_value = "fake_access_token"
+    @patch("bots.zoom_oauth_connections_utils.requests.post")
+    def test_zoom_oauth_connection_meeting_create_success(self, mock_post):
+        """Test that API key can create a Zoom meeting for its own connection."""
+        token_response = Mock()
+        token_response.json.return_value = {"access_token": "fake_access_token"}
+        token_response.raise_for_status.return_value = None
+
+        meeting_response = Mock()
+        meeting_response.json.return_value = {
+            "id": 123456789,
+            "topic": "Planning",
+            "join_url": "https://zoom.us/j/123456789",
+            "start_url": "https://zoom.us/s/123456789",
+        }
+        meeting_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [token_response, meeting_response]
+        meeting_data = {
+            "topic": "Planning",
+            "type": 2,
+            "start_time": "2026-06-08T15:00:00Z",
+            "duration": 30,
+            "timezone": "UTC",
+        }
+
         response = self._make_authenticated_request(
             "POST",
-            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/access_token",
+            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/meetings",
             self.api_key_a_plain,
-            json.dumps({}),
+            json.dumps(meeting_data),
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json()["access_token"], "fake_access_token")
-        mock_get_access_token.assert_called_once()
-        self.assertEqual(mock_get_access_token.call_args[0][0].object_id, self.zoom_oauth_connection_a.object_id)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.json()["join_url"], "https://zoom.us/j/123456789")
 
-    @patch("bots.zoom_oauth_connections_api_views.get_access_token_via_zoom_oauth_connection")
-    def test_zoom_oauth_connection_access_token_cross_project_returns_404(self, mock_get_access_token):
-        """Test that API key cannot generate an access token for another project's connection."""
+        meeting_call = mock_post.call_args_list[1]
+        self.assertEqual(meeting_call.args[0], "https://api.zoom.us/v2/users/me/meetings")
+        self.assertEqual(meeting_call.kwargs["headers"]["Authorization"], "Bearer fake_access_token")
+        self.assertEqual(meeting_call.kwargs["json"], meeting_data)
+
+    @patch("bots.zoom_oauth_connections_utils.requests.post")
+    def test_zoom_oauth_connection_meeting_create_cross_project_returns_404(self, mock_post):
+        """Test that API key cannot create a Zoom meeting for another project's connection."""
         response = self._make_authenticated_request(
             "POST",
-            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_b.object_id}/access_token",
+            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_b.object_id}/meetings",
             self.api_key_a_plain,
-            json.dumps({}),
+            json.dumps({"topic": "Planning"}),
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json()["error"], "Zoom OAuth Connection not found")
-        mock_get_access_token.assert_not_called()
+        mock_post.assert_not_called()
 
-    @patch("bots.zoom_oauth_connections_api_views.get_access_token_via_zoom_oauth_connection")
-    def test_zoom_oauth_connection_access_token_requires_connected_state(self, mock_get_access_token):
-        """Test that disconnected connections cannot generate access tokens."""
+    @patch("bots.zoom_oauth_connections_utils.requests.post")
+    def test_zoom_oauth_connection_meeting_create_requires_connected_state(self, mock_post):
+        """Test that disconnected connections cannot create Zoom meetings."""
         self.zoom_oauth_connection_a.state = ZoomOAuthConnectionStates.DISCONNECTED
         self.zoom_oauth_connection_a.save()
 
         response = self._make_authenticated_request(
             "POST",
-            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/access_token",
+            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/meetings",
             self.api_key_a_plain,
-            json.dumps({}),
+            json.dumps({"topic": "Planning"}),
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.json()["error"], "Zoom OAuth Connection is not connected")
-        mock_get_access_token.assert_not_called()
+        mock_post.assert_not_called()
 
-    def test_zoom_oauth_connection_access_token_rejects_unexpected_fields(self):
-        """Test that access token endpoint rejects unexpected fields."""
+    def test_zoom_oauth_connection_meeting_create_rejects_non_object_payload(self):
+        """Test that meeting create endpoint rejects non-object JSON payloads."""
         response = self._make_authenticated_request(
             "POST",
-            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/access_token",
+            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/meetings",
             self.api_key_a_plain,
-            json.dumps({"meeting_id": "123456789"}),
+            json.dumps(["not", "an", "object"]),
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("non_field_errors", response.json())
 
     @patch("bots.zoom_oauth_connections_api_views._handle_zoom_api_authentication_error")
-    @patch("bots.zoom_oauth_connections_api_views.get_access_token_via_zoom_oauth_connection")
-    def test_zoom_oauth_connection_access_token_authentication_error_marks_connection(self, mock_get_access_token, mock_handle_auth_error):
+    @patch("bots.zoom_oauth_connections_api_views.create_zoom_meeting_via_zoom_oauth_connection")
+    def test_zoom_oauth_connection_meeting_create_authentication_error_marks_connection(self, mock_create_meeting, mock_handle_auth_error):
         """Test that Zoom auth failures use the existing connection failure handler."""
         auth_error = ZoomAPIAuthenticationError("invalid_grant")
-        mock_get_access_token.side_effect = auth_error
+        mock_create_meeting.side_effect = auth_error
 
         response = self._make_authenticated_request(
             "POST",
-            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/access_token",
+            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/meetings",
             self.api_key_a_plain,
-            json.dumps({}),
+            json.dumps({"topic": "Planning"}),
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -517,6 +541,62 @@ class ZoomOAuthConnectionsApiObjectAccessIntegrationTest(TransactionTestCase):
         mock_handle_auth_error.assert_called_once()
         self.assertEqual(mock_handle_auth_error.call_args[0][0].object_id, self.zoom_oauth_connection_a.object_id)
         self.assertEqual(mock_handle_auth_error.call_args[0][1], auth_error)
+
+    @patch("bots.zoom_oauth_connections_utils.requests.post")
+    def test_zoom_oauth_connection_meeting_create_zoom_api_error_returns_502(self, mock_post):
+        """Test non-auth Zoom meeting creation failures return 502."""
+        token_response = Mock()
+        token_response.json.return_value = {"access_token": "fake_access_token"}
+        token_response.raise_for_status.return_value = None
+
+        meeting_response = Mock()
+        meeting_response.json.return_value = {"error": "temporarily_unavailable"}
+        meeting_exception = requests.RequestException()
+        meeting_exception.response = meeting_response
+        meeting_response.raise_for_status.side_effect = meeting_exception
+
+        mock_post.side_effect = [token_response, meeting_response]
+
+        response = self._make_authenticated_request(
+            "POST",
+            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/meetings",
+            self.api_key_a_plain,
+            json.dumps({"topic": "Planning"}),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertEqual(response.json()["error"], "Failed to create Zoom meeting")
+
+    @patch("bots.zoom_oauth_connections_utils.requests.post")
+    def test_zoom_oauth_connection_meeting_create_failure_preserves_rotated_refresh_token(self, mock_post):
+        """Test meeting creation failure after OAuth refresh does not roll back Zoom's rotated refresh token."""
+        token_response = Mock()
+        token_response.json.return_value = {
+            "access_token": "fresh_access_token",
+            "refresh_token": "rotated_refresh_token",
+        }
+        token_response.raise_for_status.return_value = None
+
+        meeting_response = Mock()
+        meeting_response.json.return_value = {"error": "temporarily_unavailable"}
+        meeting_exception = requests.RequestException()
+        meeting_exception.response = meeting_response
+        meeting_response.raise_for_status.side_effect = meeting_exception
+
+        mock_post.side_effect = [token_response, meeting_response]
+
+        response = self._make_authenticated_request(
+            "POST",
+            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/meetings",
+            self.api_key_a_plain,
+            json.dumps({"topic": "Planning"}),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
+        self.zoom_oauth_connection_a.refresh_from_db()
+        updated_credentials = self.zoom_oauth_connection_a.get_credentials()
+        self.assertEqual(updated_credentials["refresh_token"], "rotated_refresh_token")
 
     @patch("bots.zoom_oauth_connections_api_utils._exchange_access_code_for_tokens")
     @patch("bots.zoom_oauth_connections_api_utils._get_user_info")
