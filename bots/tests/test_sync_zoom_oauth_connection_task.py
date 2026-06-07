@@ -16,7 +16,7 @@ from bots.models import (
 from bots.tasks.sync_zoom_oauth_connection_task import (
     sync_zoom_oauth_connection,
 )
-from bots.zoom_oauth_connections_utils import ZoomAPIAuthenticationError
+from bots.zoom_oauth_connections_utils import ZoomAPIAuthenticationError, ZoomAPIError
 
 
 class TestSyncZoomOAuthConnection(TestCase):
@@ -305,7 +305,7 @@ class TestGetAccessToken(TestCase):
     @patch("requests.post")
     def test_get_access_token_no_access_token_in_response(self, mock_post):
         """Test when Zoom API returns response without access_token."""
-        from bots.zoom_oauth_connections_utils import ZoomAPIError, _get_access_token
+        from bots.zoom_oauth_connections_utils import _get_access_token
 
         mock_response = Mock()
         mock_response.json.return_value = {"refresh_token": "new_refresh"}
@@ -316,6 +316,75 @@ class TestGetAccessToken(TestCase):
             _get_access_token(self.zoom_oauth_connection)
 
         self.assertIn("No access_token in refresh response", str(cm.exception))
+
+    @patch("requests.post")
+    def test_get_access_token_timeout_without_response_raises_zoom_api_error(self, mock_post):
+        """Test network-level failures without a response are classified as ZoomAPIError."""
+        from bots.zoom_oauth_connections_utils import _get_access_token
+
+        mock_post.side_effect = requests.Timeout("timed out")
+
+        with self.assertRaises(ZoomAPIError) as cm:
+            _get_access_token(self.zoom_oauth_connection)
+
+        self.assertIn("No response from Zoom API", str(cm.exception))
+
+    @patch("requests.post")
+    def test_get_access_token_non_json_error_response_raises_zoom_api_error(self, mock_post):
+        """Test non-JSON Zoom error responses are logged without AttributeError."""
+        from bots.zoom_oauth_connections_utils import _get_access_token
+
+        mock_response = Mock()
+        mock_response.text = "bad gateway"
+        mock_response.json.side_effect = ValueError("not json")
+        exception = requests.RequestException()
+        exception.response = mock_response
+        mock_response.raise_for_status.side_effect = exception
+        mock_post.return_value = mock_response
+
+        with self.assertRaises(ZoomAPIError) as cm:
+            _get_access_token(self.zoom_oauth_connection)
+
+        self.assertIn("bad gateway", str(cm.exception))
+
+    @patch("requests.post")
+    def test_get_access_token_stale_rotation_retries_without_overwriting_newer_refresh_token(self, mock_post):
+        """Test stale refresh-token rotation does not overwrite a concurrent newer token."""
+        from bots.zoom_oauth_connections_utils import _get_access_token
+
+        refresh_tokens_used = []
+
+        first_response = Mock()
+        first_response.json.return_value = {
+            "access_token": "first_access_token",
+            "refresh_token": "first_rotated_refresh_token",
+        }
+        first_response.raise_for_status.return_value = None
+
+        second_response = Mock()
+        second_response.json.return_value = {
+            "access_token": "second_access_token",
+            "refresh_token": "final_refresh_token",
+        }
+        second_response.raise_for_status.return_value = None
+
+        def post_side_effect(url, data, timeout):
+            refresh_tokens_used.append(data["refresh_token"])
+            if len(refresh_tokens_used) == 1:
+                self.zoom_oauth_connection.set_credentials({"refresh_token": "concurrent_refresh_token"})
+                return first_response
+            return second_response
+
+        mock_post.side_effect = post_side_effect
+
+        result = _get_access_token(self.zoom_oauth_connection)
+
+        self.assertEqual(result, "second_access_token")
+        self.assertEqual(refresh_tokens_used, ["test_refresh_token", "concurrent_refresh_token"])
+
+        self.zoom_oauth_connection.refresh_from_db()
+        updated_credentials = self.zoom_oauth_connection.get_credentials()
+        self.assertEqual(updated_credentials["refresh_token"], "final_refresh_token")
 
 
 class TestUpsertZoomMeetingMapping(TestCase):

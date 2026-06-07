@@ -1,6 +1,7 @@
 import json
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import requests
 from django.test import Client, TransactionTestCase
 from rest_framework import status
 
@@ -402,6 +403,41 @@ class ZoomOAuthConnectionsApiObjectAccessIntegrationTest(TransactionTestCase):
         mock_handle_auth_error.assert_called_once()
         self.assertEqual(mock_handle_auth_error.call_args[0][0].object_id, self.zoom_oauth_connection_a.object_id)
         self.assertEqual(mock_handle_auth_error.call_args[0][1], auth_error)
+
+    @patch("bots.zoom_oauth_connections_utils.requests.Session")
+    @patch("bots.zoom_oauth_connections_utils.requests.post")
+    def test_zoom_oauth_connection_zak_token_failure_preserves_rotated_refresh_token(self, mock_post, mock_session):
+        """Test ZAK failure after OAuth refresh does not roll back Zoom's rotated refresh token."""
+        token_response = Mock()
+        token_response.json.return_value = {
+            "access_token": "fresh_access_token",
+            "refresh_token": "rotated_refresh_token",
+        }
+        token_response.raise_for_status.return_value = None
+        mock_post.return_value = token_response
+
+        zak_response = Mock()
+        zak_response.json.return_value = {"error": "temporarily_unavailable"}
+        zak_exception = requests.RequestException()
+        zak_exception.response = zak_response
+        zak_response.raise_for_status.side_effect = zak_exception
+
+        mock_session.return_value.__enter__ = Mock(return_value=mock_session.return_value)
+        mock_session.return_value.__exit__ = Mock(return_value=False)
+        mock_session.return_value.send.return_value = zak_response
+
+        response = self._make_authenticated_request(
+            "POST",
+            f"/api/v1/zoom_oauth_connections/{self.zoom_oauth_connection_a.object_id}/zak_token",
+            self.api_key_a_plain,
+            json.dumps({}),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
+        self.zoom_oauth_connection_a.refresh_from_db()
+        updated_credentials = self.zoom_oauth_connection_a.get_credentials()
+        self.assertEqual(updated_credentials["refresh_token"], "rotated_refresh_token")
 
     @patch("bots.zoom_oauth_connections_api_views.get_access_token_via_zoom_oauth_connection")
     def test_zoom_oauth_connection_access_token_success(self, mock_get_access_token):

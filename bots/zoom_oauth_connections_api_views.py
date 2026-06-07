@@ -54,6 +54,16 @@ NewlyCreatedZoomOAuthConnectionExample = OpenApiExample(
 )
 
 
+def _get_connected_zoom_oauth_connection_for_project(object_id, project):
+    with transaction.atomic():
+        zoom_oauth_connection = ZoomOAuthConnection.objects.select_for_update().get(object_id=object_id, zoom_oauth_app__project=project)
+
+        if zoom_oauth_connection.state != ZoomOAuthConnectionStates.CONNECTED:
+            return zoom_oauth_connection, Response({"error": "Zoom OAuth Connection is not connected"}, status=status.HTTP_400_BAD_REQUEST)
+
+    return zoom_oauth_connection, None
+
+
 class ZoomOAuthConnectionCursorPagination(CursorPagination):
     ordering = "-created_at"
     page_size = 25
@@ -224,13 +234,11 @@ class ZoomOAuthConnectionZakTokenView(GenericAPIView):
 
         zoom_oauth_connection = None
         try:
-            with transaction.atomic():
-                zoom_oauth_connection = ZoomOAuthConnection.objects.select_for_update().get(object_id=object_id, zoom_oauth_app__project=request.auth.project)
+            zoom_oauth_connection, error_response = _get_connected_zoom_oauth_connection_for_project(object_id=object_id, project=request.auth.project)
+            if error_response is not None:
+                return error_response
 
-                if zoom_oauth_connection.state != ZoomOAuthConnectionStates.CONNECTED:
-                    return Response({"error": "Zoom OAuth Connection is not connected"}, status=status.HTTP_400_BAD_REQUEST)
-
-                zak_token = get_zak_token_via_zoom_oauth_connection(zoom_oauth_connection)
+            zak_token = get_zak_token_via_zoom_oauth_connection(zoom_oauth_connection)
 
             if not zak_token:
                 return Response({"error": "Zoom did not return a ZAK token"}, status=status.HTTP_502_BAD_GATEWAY)
@@ -286,13 +294,11 @@ class ZoomOAuthConnectionAccessTokenView(GenericAPIView):
 
         zoom_oauth_connection = None
         try:
-            with transaction.atomic():
-                zoom_oauth_connection = ZoomOAuthConnection.objects.select_for_update().get(object_id=object_id, zoom_oauth_app__project=request.auth.project)
+            zoom_oauth_connection, error_response = _get_connected_zoom_oauth_connection_for_project(object_id=object_id, project=request.auth.project)
+            if error_response is not None:
+                return error_response
 
-                if zoom_oauth_connection.state != ZoomOAuthConnectionStates.CONNECTED:
-                    return Response({"error": "Zoom OAuth Connection is not connected"}, status=status.HTTP_400_BAD_REQUEST)
-
-                access_token = get_access_token_via_zoom_oauth_connection(zoom_oauth_connection)
+            access_token = get_access_token_via_zoom_oauth_connection(zoom_oauth_connection)
 
             if not access_token:
                 return Response({"error": "Zoom did not return an access token"}, status=status.HTTP_502_BAD_GATEWAY)
