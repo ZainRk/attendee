@@ -251,6 +251,28 @@ def _create_zoom_meeting(access_token: str, meeting_data: dict) -> dict:
         raise ZoomAPIError(f"Failed to parse Zoom create meeting response. Response body: {_zoom_response_body_for_log(response)}")
 
 
+def _delete_zoom_meeting(access_token: str, meeting_id: str) -> None:
+    url = f"https://api.zoom.us/v2/meetings/{meeting_id}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        response = requests.delete(url, headers=headers, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        _raise_if_error_is_authentication_error(e)
+        response_body = _zoom_response_body_for_log(getattr(e, "response", None))
+        logger.exception(f"Failed to delete Zoom meeting {meeting_id}. Response body: {response_body}")
+        raise ZoomAPIError(f"Failed to delete Zoom meeting. Response body: {response_body}")
+
+
+def delete_zoom_meeting_via_zoom_oauth_connection(zoom_oauth_connection: ZoomOAuthConnection, meeting_id: str) -> None:
+    access_token = _get_access_token(zoom_oauth_connection)
+    _delete_zoom_meeting(access_token, meeting_id)
+    ZoomMeetingToZoomOAuthConnectionMapping.objects.filter(
+        zoom_oauth_app=zoom_oauth_connection.zoom_oauth_app,
+        meeting_id=meeting_id,
+    ).delete()
+
+
 def _get_zoom_meetings(access_token: str) -> list[dict]:
     base_url = "https://api.zoom.us/v2/users/me/meetings"
     base_params = {
