@@ -2315,9 +2315,17 @@ class CreateZoomOAuthConnectionZakTokenSerializer(serializers.Serializer):
         return data
 
 
-class CreateZoomOAuthConnectionMeetingSerializer(serializers.Serializer):
+class ZoomOAuthConnectionMeetingPayloadSerializer(serializers.Serializer):
     def validate(self, data):
         if not isinstance(self.initial_data, dict):
-            raise serializers.ValidationError("Expected a JSON object containing Zoom meeting creation fields")
+            raise serializers.ValidationError("Expected a JSON object containing Zoom meeting fields")
 
         return self.initial_data
+
+
+class CreateZoomOAuthConnectionMeetingSerializer(ZoomOAuthConnectionMeetingPayloadSerializer):
+    pass
+
+
+class UpdateZoomOAuthConnectionMeetingSerializer(ZoomOAuthConnectionMeetingPayloadSerializer):
+    pass

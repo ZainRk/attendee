@@ -2200,6 +2200,114 @@ paths:
           description: Zoom OAuth Connection not found
         '502':
           description: Zoom meeting creation failed
+  /api/v1/zoom_oauth_connections/{object_id}/meetings/{meeting_id}:
+    patch:
+      operationId: Update Zoom OAuth Connection Meeting
+      description: Updates a Zoom meeting for the connected Zoom OAuth user in the
+        authenticated project. Attendee refreshes and uses the Zoom OAuth token internally.
+      summary: Update a Zoom meeting
+      parameters:
+      - in: header
+        name: Authorization
+        schema:
+          type: string
+          default: Token YOUR_API_KEY_HERE
+        description: API key for authentication
+        required: true
+      - in: header
+        name: Content-Type
+        schema:
+          type: string
+          default: application/json
+        description: Should always be application/json
+        required: true
+      - in: path
+        name: meeting_id
+        schema:
+          type: string
+        description: Zoom Meeting ID
+        required: true
+        examples:
+          ZoomMeetingIDExample:
+            value: '123456789'
+            summary: Zoom Meeting ID Example
+      - in: path
+        name: object_id
+        schema:
+          type: string
+        description: Zoom OAuth Connection ID
+        required: true
+        examples:
+          ZoomOAuthConnectionIDExample:
+            value: zoc_abcdef1234567890
+            summary: Zoom OAuth Connection ID Example
+      tags:
+      - Zoom OAuth Connections
+      security:
+      - {}
+      responses:
+        '204':
+          description: Zoom meeting updated successfully
+        '400':
+          description: Invalid input, Zoom OAuth connection state, or authentication
+            failure
+        '404':
+          description: Zoom OAuth Connection not found
+        '502':
+          description: Zoom meeting update failed
+    delete:
+      operationId: Delete Zoom OAuth Connection Meeting
+      description: Deletes a Zoom meeting for the connected Zoom OAuth user in the
+        authenticated project. Also removes the local meeting-to-connection mapping.
+      summary: Delete a Zoom meeting
+      parameters:
+      - in: header
+        name: Authorization
+        schema:
+          type: string
+          default: Token YOUR_API_KEY_HERE
+        description: API key for authentication
+        required: true
+      - in: header
+        name: Content-Type
+        schema:
+          type: string
+          default: application/json
+        description: Should always be application/json
+        required: true
+      - in: path
+        name: meeting_id
+        schema:
+          type: string
+        description: Zoom Meeting ID
+        required: true
+        examples:
+          ZoomMeetingIDExample:
+            value: '123456789'
+            summary: Zoom Meeting ID Example
+      - in: path
+        name: object_id
+        schema:
+          type: string
+        description: Zoom OAuth Connection ID
+        required: true
+        examples:
+          ZoomOAuthConnectionIDExample:
+            value: zoc_abcdef1234567890
+            summary: Zoom OAuth Connection ID Example
+      tags:
+      - Zoom OAuth Connections
+      security:
+      - {}
+      responses:
+        '204':
+          description: Zoom meeting deleted successfully
+        '400':
+          description: Invalid Zoom OAuth connection state or authentication failure
+        '404':
+          description: Zoom OAuth Connection not found
+        '502':
+          description: Zoom meeting deletion failed
   /api/v1/zoom_oauth_connections/{object_id}/zak_token:
     post:
       operationId: Create Zoom OAuth Connection ZAK Token

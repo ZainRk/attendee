@@ -16,7 +16,7 @@ When a user authorizes your Zoom app through OAuth:
 3. When your bot joins a meeting hosted by that user, Attendee generates a local recording token using the stored credentials.
 4. When your app launches a bot on behalf of a user, you pass that user's zoom user id to Attendee in the bot creation request. Attendee will then generate an onbehalf token using the stored credentials.
 
-If your application also needs to create Zoom meetings or events for the authorized user, call `POST /api/v1/zoom_oauth_connections/{zoom_oauth_connection_id}/meetings` with a Zoom meeting creation payload. Attendee refreshes and uses the Zoom OAuth access token internally, calls Zoom's Create Meeting API, and returns Zoom's meeting response to your application. Your Zoom OAuth app must include the required Zoom meeting creation scope, such as `meeting:write` or the granular `meeting:write:meeting` scope.
+If your application also needs to manage Zoom meetings or events for the authorized user, call `POST /api/v1/zoom_oauth_connections/{zoom_oauth_connection_id}/meetings` to create a meeting, `PATCH /api/v1/zoom_oauth_connections/{zoom_oauth_connection_id}/meetings/{meeting_id}` to update one, or `DELETE /api/v1/zoom_oauth_connections/{zoom_oauth_connection_id}/meetings/{meeting_id}` to delete one. Attendee refreshes and uses the Zoom OAuth access token internally, calls Zoom's Meetings API, and returns the Zoom API result without exposing tokens. Your Zoom OAuth app must include the required Zoom meeting management scopes, such as `meeting:write`, `meeting:update`, `meeting:delete`, or the granular `meeting:write:meeting`, `meeting:update:meeting`, and `meeting:delete:meeting` scopes.
 
 ## Create a Zoom App
 
