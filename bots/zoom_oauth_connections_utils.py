@@ -264,6 +264,19 @@ def _delete_zoom_meeting(access_token: str, meeting_id: str) -> None:
         raise ZoomAPIError(f"Failed to delete Zoom meeting. Response body: {response_body}")
 
 
+def _update_zoom_meeting(access_token: str, meeting_id: str, meeting_data: dict) -> None:
+    url = f"https://api.zoom.us/v2/meetings/{meeting_id}"
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    try:
+        response = requests.patch(url, headers=headers, json=meeting_data, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        _raise_if_error_is_authentication_error(e)
+        response_body = _zoom_response_body_for_log(getattr(e, "response", None))
+        logger.exception(f"Failed to update Zoom meeting {meeting_id}. Response body: {response_body}")
+        raise ZoomAPIError(f"Failed to update Zoom meeting. Response body: {response_body}")
+
+
 def delete_zoom_meeting_via_zoom_oauth_connection(zoom_oauth_connection: ZoomOAuthConnection, meeting_id: str) -> None:
     access_token = _get_access_token(zoom_oauth_connection)
     _delete_zoom_meeting(access_token, meeting_id)
@@ -271,6 +284,11 @@ def delete_zoom_meeting_via_zoom_oauth_connection(zoom_oauth_connection: ZoomOAu
         zoom_oauth_app=zoom_oauth_connection.zoom_oauth_app,
         meeting_id=meeting_id,
     ).delete()
+
+
+def update_zoom_meeting_via_zoom_oauth_connection(zoom_oauth_connection: ZoomOAuthConnection, meeting_id: str, meeting_data: dict) -> None:
+    access_token = _get_access_token(zoom_oauth_connection)
+    _update_zoom_meeting(access_token, meeting_id, meeting_data)
 
 
 def _get_zoom_meetings(access_token: str) -> list[dict]:
