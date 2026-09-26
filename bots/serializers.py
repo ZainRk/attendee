@@ -2431,3 +2431,31 @@ class ZoomOAuthConnectionSerializer(serializers.ModelSerializer):
             "last_attempted_sync_at",
         ]
         read_only_fields = fields
+
+
+class CreateZoomOAuthConnectionZakTokenSerializer(serializers.Serializer):
+    def validate(self, data):
+        expected_fields = set(self.fields.keys())
+        provided_fields = set(self.initial_data.keys())
+        unexpected_fields = provided_fields - expected_fields
+
+        if unexpected_fields:
+            raise serializers.ValidationError(f"Unexpected field(s): {', '.join(sorted(unexpected_fields))}. Allowed fields are: {', '.join(sorted(expected_fields))}")
+
+        return data
+
+
+class ZoomOAuthConnectionMeetingPayloadSerializer(serializers.Serializer):
+    def validate(self, data):
+        if not isinstance(self.initial_data, dict):
+            raise serializers.ValidationError("Expected a JSON object containing Zoom meeting fields")
+
+        return self.initial_data
+
+
+class CreateZoomOAuthConnectionMeetingSerializer(ZoomOAuthConnectionMeetingPayloadSerializer):
+    pass
+
+
+class UpdateZoomOAuthConnectionMeetingSerializer(ZoomOAuthConnectionMeetingPayloadSerializer):
+    pass
