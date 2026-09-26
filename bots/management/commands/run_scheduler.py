@@ -14,6 +14,8 @@ from django.db.models import Q
 from django.utils import timezone
 
 from accounts.models import Organization
+from bots.instance_health_alert_manager import InstanceHealthAlertManager
+from bots.instance_health_snapshot_taker import InstanceHealthSnapshotTaker
 from bots.models import Bot, BotStates, Calendar, CalendarStates, ZoomOAuthConnection, ZoomOAuthConnectionStates
 from bots.tasks.autopay_charge_task import enqueue_autopay_charge_task
 from bots.tasks.launch_scheduled_bot_task import launch_scheduled_bot
@@ -56,15 +58,6 @@ class Command(BaseCommand):
             self._redis_client = redis.from_url(settings.REDIS_URL_WITH_PARAMS)
         return self._redis_client
 
-    def _log_celery_queue_size(self, queue_name):
-        """Log the size of the default Celery queue."""
-        try:
-            queue_size = self._get_redis_client().llen(queue_name)
-            log.info("Celery queue %s size: %d", queue_name, queue_size)
-        except Exception:
-            log.exception("Failed to get Celery queue %s size", queue_name)
-            self._redis_client = None  # Reset connection on failure
-
     def _write_heartbeat(self):
         """Rewrite the heartbeat file so a liveness probe can detect a stalled loop."""
         if not SCHEDULER_HEARTBEAT_FILE:
@@ -74,15 +67,6 @@ class Command(BaseCommand):
                 f.write(str(time.time()))
         except Exception:
             log.warning("Failed to write scheduler heartbeat file", exc_info=True)
-
-    def _log_celery_queue_sizes(self):
-        try:
-            # Get all the celery queue names from the CELERY_TASK_ROUTES setting
-            queue_names = list({"celery"} | {route.get("queue", "celery") for route in settings.CELERY_TASK_ROUTES.values()})
-            for queue_name in queue_names:
-                self._log_celery_queue_size(queue_name)
-        except Exception:
-            log.exception("Failed to get Celery queue sizes, skipping")
 
     def handle(self, *args, **opts):
         # Trap SIGINT / SIGTERM so Kubernetes or Heroku can stop the container cleanly
@@ -94,10 +78,14 @@ class Command(BaseCommand):
         # Write an initial heartbeat so the liveness probe passes during startup.
         self._write_heartbeat()
 
+        instance_health_snapshot_taker = InstanceHealthSnapshotTaker()
+        instance_health_alert_manager = InstanceHealthAlertManager()
+
         while self._keep_running:
             began = time.monotonic()
             try:
-                self._log_celery_queue_sizes()
+                instance_health_snapshot_taker.save_snapshot_if_needed()
+                instance_health_alert_manager.update_alerts()
                 self._run_scheduled_bots()
                 self._run_periodic_calendar_syncs()
                 self._run_periodic_zoom_oauth_connection_syncs()
@@ -198,9 +186,9 @@ class Command(BaseCommand):
         log.info(f"Found {len(pending_scheduled_bot_task_args)} pending launch scheduled bot tasks")
 
         join_at_upper_threshold = timezone.now() + timezone.timedelta(seconds=jitter_end_seconds)
-        # If we miss a scheduled bot by more than 5 minutes, don't bother launching it, it's a failure and it'll be cleaned up
-        # by the clean_up_bots_with_heartbeat_timeout_or_that_never_launched command
-        join_at_lower_threshold = timezone.now() - timezone.timedelta(minutes=5)
+        # If we miss a scheduled bot by more than the launch window, don't bother launching it, it's a failure
+        # and it'll be cleaned up by the clean_up_bots_with_heartbeat_timeout_or_that_never_launched command
+        join_at_lower_threshold = timezone.now() - timezone.timedelta(seconds=settings.SCHEDULED_BOT_LAUNCH_WINDOW_AFTER_JOIN_AT_SECONDS)
 
         join_at_jitter_threshold = timezone.now() + timezone.timedelta(seconds=jitter_start_seconds)
 
@@ -255,11 +243,11 @@ class Command(BaseCommand):
         can run safely (e.g. during rolling deploys).
         """
 
-        # Give the bots 5 minutes to spin up, before they join the meeting.
-        join_at_upper_threshold = timezone.now() + timezone.timedelta(minutes=5)
-        # If we miss a scheduled bot by more than 5 minutes, don't bother launching it, it's a failure and it'll be cleaned up
-        # by the clean_up_bots_with_heartbeat_timeout_or_that_never_launched command
-        join_at_lower_threshold = timezone.now() - timezone.timedelta(minutes=5)
+        # Give the bots time to spin up, before they join the meeting.
+        join_at_upper_threshold = timezone.now() + timezone.timedelta(seconds=settings.SCHEDULED_BOT_LAUNCH_WINDOW_BEFORE_JOIN_AT_SECONDS)
+        # If we miss a scheduled bot by more than the launch window, don't bother launching it, it's a failure
+        # and it'll be cleaned up by the clean_up_bots_with_heartbeat_timeout_or_that_never_launched command
+        join_at_lower_threshold = timezone.now() - timezone.timedelta(seconds=settings.SCHEDULED_BOT_LAUNCH_WINDOW_AFTER_JOIN_AT_SECONDS)
 
         with transaction.atomic():
             bots_to_launch = Bot.objects.filter(state=BotStates.SCHEDULED, join_at__lte=join_at_upper_threshold, join_at__gte=join_at_lower_threshold).select_for_update(skip_locked=True)

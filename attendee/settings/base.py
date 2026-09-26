@@ -227,6 +227,13 @@ REST_FRAMEWORK = {
 }
 
 DISABLE_RATE_LIMITING = os.getenv("DISABLE_RATE_LIMITING", "false") == "true"
+
+# When enabled, the team management UI exposes granular per-project permissions for viewing
+# recording content and managing API keys.
+ENABLE_GRANULAR_PERMISSIONS = os.getenv("ENABLE_GRANULAR_PERMISSIONS", "false") == "true"
+
+ENABLE_VIEWING_RECORDING_CONTENT = os.getenv("ENABLE_VIEWING_RECORDING_CONTENT", "true") == "true"
+
 SPECTACULAR_SETTINGS = {
     "TITLE": "Attendee API",
     "DESCRIPTION": "Meetings bots made easy",
@@ -290,6 +297,10 @@ FALLBACK_TO_DB_STORAGE_FOR_AUDIO_CHUNKS_IF_REMOTE_STORAGE_FAILS = os.getenv("FAL
 AWS_AUDIO_CHUNK_STORAGE_BUCKET_NAME = os.getenv("AWS_AUDIO_CHUNK_STORAGE_BUCKET_NAME") or AWS_RECORDING_STORAGE_BUCKET_NAME
 AZURE_AUDIO_CHUNK_STORAGE_CONTAINER_NAME = os.getenv("AZURE_AUDIO_CHUNK_STORAGE_CONTAINER_NAME") or AZURE_RECORDING_STORAGE_CONTAINER_NAME
 
+# Bot debug screenshot storage settings
+AWS_BOT_DEBUG_SCREENSHOT_STORAGE_BUCKET_NAME = os.getenv("AWS_BOT_DEBUG_SCREENSHOT_STORAGE_BUCKET_NAME") or AWS_RECORDING_STORAGE_BUCKET_NAME
+AZURE_BOT_DEBUG_SCREENSHOT_STORAGE_CONTAINER_NAME = os.getenv("AZURE_BOT_DEBUG_SCREENSHOT_STORAGE_CONTAINER_NAME") or AZURE_RECORDING_STORAGE_CONTAINER_NAME
+
 if STORAGE_PROTOCOL == "azure":
     DEFAULT_STORAGE_BACKEND = {
         "BACKEND": "storages.backends.azure_storage.AzureStorage",
@@ -305,6 +316,9 @@ if STORAGE_PROTOCOL == "azure":
 
     AUDIO_CHUNK_STORAGE_BACKEND = copy.deepcopy(DEFAULT_STORAGE_BACKEND)
     AUDIO_CHUNK_STORAGE_BACKEND["OPTIONS"]["azure_container"] = AZURE_AUDIO_CHUNK_STORAGE_CONTAINER_NAME
+
+    BOT_DEBUG_SCREENSHOT_STORAGE_BACKEND = copy.deepcopy(DEFAULT_STORAGE_BACKEND)
+    BOT_DEBUG_SCREENSHOT_STORAGE_BACKEND["OPTIONS"]["azure_container"] = AZURE_BOT_DEBUG_SCREENSHOT_STORAGE_CONTAINER_NAME
 else:
     DEFAULT_STORAGE_BACKEND = {
         "BACKEND": "storages.backends.s3.S3Storage",
@@ -321,11 +335,14 @@ else:
     AUDIO_CHUNK_STORAGE_BACKEND = copy.deepcopy(DEFAULT_STORAGE_BACKEND)
     AUDIO_CHUNK_STORAGE_BACKEND["OPTIONS"]["bucket_name"] = AWS_AUDIO_CHUNK_STORAGE_BUCKET_NAME
 
+    BOT_DEBUG_SCREENSHOT_STORAGE_BACKEND = copy.deepcopy(DEFAULT_STORAGE_BACKEND)
+    BOT_DEBUG_SCREENSHOT_STORAGE_BACKEND["OPTIONS"]["bucket_name"] = AWS_BOT_DEBUG_SCREENSHOT_STORAGE_BUCKET_NAME
+
 
 STORAGES = {
     "default": DEFAULT_STORAGE_BACKEND,
     "recordings": RECORDING_STORAGE_BACKEND,
-    "bot_debug_screenshots": RECORDING_STORAGE_BACKEND,
+    "bot_debug_screenshots": BOT_DEBUG_SCREENSHOT_STORAGE_BACKEND,
     "audio_chunks": AUDIO_CHUNK_STORAGE_BACKEND,
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
@@ -337,6 +354,12 @@ if os.getenv("USE_IRSA_FOR_S3_STORAGE", "false") == "true":
 
 CHARGE_CREDITS_FOR_BOTS = os.getenv("CHARGE_CREDITS_FOR_BOTS", "false") == "true"
 
+# This flag controls whether a prejoin leave or meeting end causes the bot to finish in the fatal error state.
+# Previously a prejoin leave or meeting end caused the bot to finish in the ended state
+# which was misleading because that implies the bot did something useful.
+# This flag is temporary, in the future we will remove this flag and always map prejoin leave or meeting end to the fatal error state.
+PREJOIN_LEAVE_OR_MEETING_END_IS_FATAL_ERROR = os.getenv("PREJOIN_LEAVE_OR_MEETING_END_IS_FATAL_ERROR", "false") == "true"
+
 BOT_POD_NAMESPACE = os.getenv("BOT_POD_NAMESPACE", "attendee")
 WEBPAGE_STREAMER_POD_NAMESPACE = os.getenv("WEBPAGE_STREAMER_POD_NAMESPACE", "attendee-webpage-streamer")
 REQUIRE_HTTPS_WEBHOOKS = os.getenv("REQUIRE_HTTPS_WEBHOOKS", "true") == "true"
@@ -347,6 +370,7 @@ MAX_METADATA_LENGTH = int(os.getenv("MAX_METADATA_LENGTH", 1000))
 SITE_DOMAIN = os.getenv("SITE_DOMAIN", "attendee.gaintime.ai")
 MASK_TRANSCRIPT_IN_LOGS = os.getenv("MASK_TRANSCRIPT_IN_LOGS", "false") == "true"
 ENFORCE_DOMAIN_ALLOWLIST_IN_CHROME = os.getenv("ENFORCE_DOMAIN_ALLOWLIST_IN_CHROME", "false") == "true"
+MONITOR_DOMAIN_ALLOWLIST_IN_CHROME = ENFORCE_DOMAIN_ALLOWLIST_IN_CHROME or (os.getenv("MONITOR_DOMAIN_ALLOWLIST_IN_CHROME", "false") == "true")
 CUSTOM_BOT_POD_SPEC_TYPES = os.getenv("CUSTOM_BOT_POD_SPEC_TYPES", "").split(",") if os.getenv("CUSTOM_BOT_POD_SPEC_TYPES") else []
 GLOBAL_WEBHOOK_DELIVERIES_PER_SECOND_RATE_LIMIT = int(os.getenv("GLOBAL_WEBHOOK_DELIVERIES_PER_SECOND_RATE_LIMIT")) if os.getenv("GLOBAL_WEBHOOK_DELIVERIES_PER_SECOND_RATE_LIMIT") else None
 LOG_BOT_STATE_CHANGES = os.getenv("LOG_BOT_STATE_CHANGES", "false") == "true"
@@ -357,11 +381,25 @@ STORE_INFRASTRUCTURE_INFORMATION_IN_BOT_EVENT_METADATA = os.getenv("STORE_INFRAS
 
 CONCURRENT_BOTS_LIMIT = int(os.getenv("CONCURRENT_BOTS_LIMIT", 2500))
 
+# The scheduler launches a scheduled bot once the current time is within this window around its join_at.
+# BEFORE: how early the bot is launched, to give it time to spin up before join_at.
+# AFTER: how late a missed bot can still be launched.
+SCHEDULED_BOT_LAUNCH_WINDOW_BEFORE_JOIN_AT_SECONDS = int(os.getenv("SCHEDULED_BOT_LAUNCH_WINDOW_BEFORE_JOIN_AT_SECONDS", 300))
+SCHEDULED_BOT_LAUNCH_WINDOW_AFTER_JOIN_AT_SECONDS = int(os.getenv("SCHEDULED_BOT_LAUNCH_WINDOW_AFTER_JOIN_AT_SECONDS", 300))
+
+CLEANTALK_API_KEY = os.getenv("CLEANTALK_API_KEY")
+USERCHECK_API_KEY = os.getenv("USERCHECK_API_KEY")
 MAILGUN_VALIDATION_API_KEY = os.getenv("MAILGUN_VALIDATION_API_KEY")
 BYPASS_MAILGUN_VALIDATION_SUBSTRING = os.getenv("BYPASS_MAILGUN_VALIDATION_SUBSTRING")
 
 # After the bots recording exceeds this size, we will degrade the video recording to black to conserve storage space.
 BOT_RECORDING_VIDEO_DEGRADE_THRESHOLD_BYTES = int(os.getenv("BOT_RECORDING_VIDEO_DEGRADE_THRESHOLD_BYTES")) if os.getenv("BOT_RECORDING_VIDEO_DEGRADE_THRESHOLD_BYTES") else None
+
+SAVE_INSTANCE_HEALTH_SNAPSHOTS = os.getenv("SAVE_INSTANCE_HEALTH_SNAPSHOTS", "false") == "true"
+INSTANCE_HEALTH_ONLY_VIEWABLE_BY_SUPERUSERS = os.getenv("INSTANCE_HEALTH_ONLY_VIEWABLE_BY_SUPERUSERS", "false") == "true"
+
+SAVE_BOT_RESOURCE_SNAPSHOTS = str(os.getenv("SAVE_BOT_RESOURCE_SNAPSHOTS", "false")).lower() == "true"
+BOT_RESOURCE_USAGE_ONLY_VIEWABLE_BY_SUPERUSERS = os.getenv("BOT_RESOURCE_USAGE_ONLY_VIEWABLE_BY_SUPERUSERS", "false") == "true"
 
 # Content Security Policy
 if os.getenv("ENABLE_CSP", "false") == "true":
